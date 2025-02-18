@@ -1,0 +1,10 @@
+# Ignore Visual Studio Code directory
+.vscode/
+
+# Ignore .out files
+*.out
+*_apalache-out
+*tmp
+
+# Ignore folders named 'states'
+states/
