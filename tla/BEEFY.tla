@@ -218,12 +218,6 @@ ValidParent(p, h, e) ==
 (*  - Block b is not the same as parent block p (b != p).                  *)
 (*  - Block b is not already proposed (height[b] <= -1).                   *)
 (*  - The parent block p is valid.                                         *)
-(* Then:                                                                   *)
-(*  - Updates the height to indicate the round in which a block b          *)
-(*    is proposed.                                                         *)
-(*  - Sets the parent of block b to p.                                     *)
-(*  - Sets the epoch to indicate what epoch this block belongs to.         *)
-(*  - Proposed block has their status set to "Available".                  *)
 (***************************************************************************)
 propose(b, p, h, e) ==
     /\ height' = [height EXCEPT ![b] = h]
