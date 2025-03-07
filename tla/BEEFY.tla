@@ -365,7 +365,7 @@ NEXT_POWER_OF_TWO(x, y) == IF y >= x THEN y ELSE NEXT_POWER_OF_TWO(x, 2 * y)
 (*  - Uses set operations to find the next power of two.                   *)
 (*  - Required for Apalache, which does not support recursion.             *)
 (* Note: Since Apalache struggles with the CHOOSE operator it recommends   *)
-(* to use Fold operators is instead (not implemented).                     *)
+(* to use Fold operators instead (not implemented).                        *)
 (***************************************************************************)
 NEXT_POWER_OF_TWO_V2(x) == 
     LET 
@@ -453,6 +453,7 @@ CalculateRoundNumber(n) ==
 (*  - Votes for an inactive round are not propagated.                      *)
 (***************************************************************************)
 UpdateRound(n) ==
+    \* This condition can make the algorithm stuck (Explanation above).
     /\ height[bestBEEFY[n]] >= round[n]
     /\ castVote[n]
     /\ CalculateRoundNumber(n)
