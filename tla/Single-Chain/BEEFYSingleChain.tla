@@ -212,7 +212,7 @@ InitWithFaults ==
 Proposed(b) == 
     /\ b \in Blocks
     /\ height[b] > -1
-    /\ epoch[b] > - 1
+    /\ epoch[b] > -1
 
 (***************************************************************************)
 (* A block p is a valid parent for a block with height h and epoch e iff:  *)
@@ -240,7 +240,6 @@ propose(b, p, h, e) ==
     /\ height' = [height EXCEPT ![b] = h]
     /\ parent' = [parent EXCEPT ![b] = p]
     /\ epoch' = [epoch EXCEPT ![b] = e]
-    /\ status' = [status EXCEPT ![b] = "Finalized"]
 
 doneProposing ==
     /\ pc' = "Voting"
@@ -253,15 +252,18 @@ Propose(e) ==
         p == CHOOSE p \in Blocks \ B : \A c \in Blocks : height[p] >= height[c]
             \* Since genesis start with height 0, there will always be a 
             \* block with the greatest height.
-        b == CHOOSE c \in B : height[c] = -1
+        b == CHOOSE c \in B : TRUE
+            \* Block to be proposed.
+        h == height[p] + 1
+            \* Height of the block to be propsoed.
     IN
     /\ pc = "Proposing"
     /\ IF B = {} THEN doneProposing ELSE
        /\ ~Proposed(b)
-       /\ ValidParent(p, height[p] + 1, e)
-       /\ propose(b, p, height[p] + 1, e)
+       /\ ValidParent(p, h, e)
+       /\ propose(b, p, h, e)
        /\ UNCHANGED <<round, bestBEEFY, bestGRANDPA, sessionStart, castVote, 
-                   votes, pc>>
+                   votes, pc, status>>
 
 (***************************************************************************)
 (* Block b is finalized (GRANDPA Finalized) iff:                           *)
@@ -389,7 +391,7 @@ NEXT_POWER_OF_TWO(x, y) == IF y >= x THEN y ELSE NEXT_POWER_OF_TWO(x, 2 * y)
 (*  - Uses set operations to find the next power of two.                   *)
 (*  - Required for Apalache, which does not support recursion.             *)
 (* Note: Since Apalache struggles with the CHOOSE operator it recommends   *)
-(* to use Fold operators is instead (not implemented).                     *)
+(* to use Fold operators instead (not implemented).                        *)
 (***************************************************************************)
 NEXT_POWER_OF_TWO_V2(x) == 
     LET 
@@ -479,7 +481,7 @@ CalculateRoundNumber(n) ==
 (***************************************************************************)
 UpdateRound(n) ==
     /\ pc = "Voting"
-    \*/\ height[bestBEEFY[n]] >= round[n]
+    /\ height[bestBEEFY[n]] >= round[n]
     /\ castVote[n]
     /\ CalculateRoundNumber(n)
     /\ UNCHANGED <<bestGRANDPA, bestBEEFY, sessionStart, votes, 
@@ -654,10 +656,10 @@ HonestRoundImpliesMandatoryBlocksJustified ==
         => Justified(b)
 
 (***************************************************************************)
-(* No block can have a BEEFY Justification if there exists a mandatory     *)
-(* block at a lower or equal height that lacks a BEEFY Justification.      *)
+(* If a block has a BEEFY Justification b, then all mandatory blocks with  *)
+(* height less or equal to b must have a BEEFY Justification.              *)
 (***************************************************************************)
-AllPreviousMandatoryJustified == 
+AllPreviousMandatoryBlocksJustified == 
     \A b \in Blocks : Justified(b) => \A c \in Blocks :
         /\ IsMandatory(c)
         /\ height[c] <= height[b]
@@ -673,5 +675,8 @@ AllPreviousMandatoryJustified ==
 (***************************************************************************)
 MandatoryBlocksJustified ==
     \A b \in Blocks : ((IsMandatory(b) ~> Justified(b)))
+
+BlockEventuallyConfirmed ==
+    <>\E b \in Blocks : Justified(b) /\ b /= gen
 
 =============================================================================
