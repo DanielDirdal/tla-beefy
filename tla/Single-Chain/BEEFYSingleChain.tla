@@ -108,14 +108,11 @@ VARIABLES
     status,
     \* The blocks epoch number, mapping of block to epoch.
     \* @type: $block -> $epoch;
-    epoch,
-    \* Program Counter to indicate when finished proposing blocks.
-    \* @type: $str -> $str
-    pc
+    epoch
 
 \* Tuple of all the variables
 vars == <<round, bestBEEFY, bestGRANDPA, sessionStart, castVote, votes, 
-          height, status, parent, epoch, pc>>
+          height, status, parent, epoch>>
 
 (***************************************************************************)
 (* The type invariant                                                      *)
@@ -131,7 +128,6 @@ TypeOK ==
     /\ status \in [Blocks -> {"Available", "Finalized"}]
     /\ parent \in [Blocks -> Blocks]
     /\ epoch \in [Blocks -> Epochs]
-    /\ pc \in {"Proposing", "Voting"}
 
 (***************************************************************************)
 (* Note: Uppercase always indicate that it is a set (if a set uses both, it*)
@@ -169,7 +165,6 @@ Init ==
     /\ parent = [b \in Blocks |-> b]
     /\ epoch = [[b \in Blocks |-> -1] EXCEPT ![gen]=0]
     /\ votes = [[b \in Blocks |-> {}] EXCEPT ![gen]=Nodes]
-    /\ pc = "Proposing"
 
 (***************************************************************************)
 (* To reduce the state space and improve running time, we initialize the   *)
@@ -194,7 +189,6 @@ InitWithFaults ==
     /\ status = [[b \in Blocks |-> "Available"] EXCEPT ![gen]="Finalized"]
     /\ parent = [b \in Blocks |-> b]
     /\ epoch = [[b \in Blocks |-> -1] EXCEPT ![gen]=0]
-    /\ pc = "Proposing"
     \* non-deterministically initialize the votes for blocks with faults
     /\ \E F \in SUBSET [n: FNodes, b: Blocks] :
         votes = [b \in Blocks |->
@@ -241,11 +235,6 @@ propose(b, p, h, e) ==
     /\ parent' = [parent EXCEPT ![b] = p]
     /\ epoch' = [epoch EXCEPT ![b] = e]
 
-doneProposing ==
-    /\ pc' = "Voting"
-    /\ UNCHANGED <<round, bestBEEFY, bestGRANDPA, sessionStart, castVote, 
-                    votes, height, parent, epoch, status>>
-
 Propose(e) ==
     LET 
         B == {c \in Blocks : height[c] = -1}
@@ -255,15 +244,14 @@ Propose(e) ==
         b == CHOOSE c \in B : TRUE
             \* Block to be proposed.
         h == height[p] + 1
-            \* Height of the block to be propsoed.
+            \* Height of the block to be proposed.
     IN
-    /\ pc = "Proposing"
-    /\ IF B = {} THEN doneProposing ELSE
+    /\ IF B = {} THEN FALSE ELSE
        /\ ~Proposed(b)
        /\ ValidParent(p, h, e)
        /\ propose(b, p, h, e)
        /\ UNCHANGED <<round, bestBEEFY, bestGRANDPA, sessionStart, castVote, 
-                   votes, pc, status>>
+                   votes, status>>
 
 (***************************************************************************)
 (* Block b is finalized (GRANDPA Finalized) iff:                           *)
@@ -298,7 +286,6 @@ Justified(b) ==
 (* to "Finalized" and that all finalized blocks lies on a single chain.    *)
 (***************************************************************************)
 UpdateBlock(b) ==
-    /\ pc = "Voting"
     /\ Proposed(b)
     /\ ~Finalized(b)
     /\ Finalized(parent[b])
@@ -307,7 +294,7 @@ UpdateBlock(b) ==
                 /\ status[c] = "Finalized"
     /\ status' = [status EXCEPT ![b] = "Finalized"]
     /\ UNCHANGED <<round, bestBEEFY, bestGRANDPA, sessionStart, castVote, 
-                    votes, height, parent, epoch, pc>>
+                    votes, height, parent, epoch>>
 
 (***************************************************************************)
 (* Updates the best GRANDPA block for node n to block b if:                *)
@@ -316,12 +303,11 @@ UpdateBlock(b) ==
 (*    tracked by node n.                                                   *)
 (***************************************************************************)
 UpdateGRANDPAView(n, b) ==
-    /\ pc = "Voting"
     /\ Finalized(b)
     /\ height[b] > height[bestGRANDPA[n]]
     /\ bestGRANDPA' = [bestGRANDPA EXCEPT ![n] = b]
     /\ UNCHANGED <<round, bestBEEFY, sessionStart, castVote, votes, 
-                    height, status, parent, epoch, pc>>
+                    height, status, parent, epoch>>
                 
 (***************************************************************************)
 (* Updates the best BEEFY block for node n to block b if:                  *)
@@ -332,13 +318,12 @@ UpdateGRANDPAView(n, b) ==
 (*  - Block b is finalized and has a BEEFY justification.                  *)
 (***************************************************************************)   
 UpdateBEEFYView(n, b) ==
-    /\ pc = "Voting"
     /\ height[b] > height[bestBEEFY[n]]
     /\ height[bestGRANDPA[n]] >= height[b]
     /\ Justified(b)
     /\ bestBEEFY' = [bestBEEFY EXCEPT ![n] = b]
     /\ UNCHANGED <<round, bestGRANDPA, sessionStart, castVote, votes, 
-                    height, status, parent, epoch, pc>>
+                    height, status, parent, epoch>>
 
 (***************************************************************************)
 (* Updates the session start mandatory block for node n if:                *)
@@ -365,12 +350,11 @@ UpdatesessionStart(n) ==
         g == bestGRANDPA[n]
             \* Latest GRANDPA finalized block for node n.
     IN
-    /\ pc = "Voting"
     /\ Justified(m)
     /\ epoch[g] > epoch[m]
     /\ sessionStart' = [sessionStart EXCEPT ![n] = FindMandatoryBlock(epoch[m])]
     /\ UNCHANGED <<round, bestGRANDPA, bestBEEFY, round, castVote, votes, 
-                    height, status, parent, epoch, pc>>
+                    height, status, parent, epoch>>
 
 (***************************************************************************)
 (* Recursive operator to compute the smallest power of two >= x            *)
@@ -449,7 +433,6 @@ CalculateRoundNumber(n) ==
         M * Min(height[e], (height[bestBEEFY[n]] + NEXT_POWER_OF_TWO_V2(x)))
             \* Calculate the next round to start.
     IN
-        /\ pc = "Voting"
         \* Make sure the new round is less or equal to the best finalized
         \* GRANDPA round (block height).
         /\ height[bestGRANDPA[n]] >= r
@@ -480,12 +463,11 @@ CalculateRoundNumber(n) ==
 (*  - Votes for an inactive round are not propagated.                      *)
 (***************************************************************************)
 UpdateRound(n) ==
-    /\ pc = "Voting"
     /\ height[bestBEEFY[n]] >= round[n]
     /\ castVote[n]
     /\ CalculateRoundNumber(n)
     /\ UNCHANGED <<bestGRANDPA, bestBEEFY, sessionStart, votes, 
-                    height, status, parent, epoch, pc>>
+                    height, status, parent, epoch>>
 
 (***************************************************************************)
 (* A honest node n can vote for a block b in round r if:                   *)
@@ -500,14 +482,13 @@ vote(n, b) ==
     /\ castVote' = [castVote EXCEPT ![n] = TRUE]
 
 Vote(n, b) ==
-    /\ pc = "Voting"
     /\ Finalized(b)
     /\ height[bestGRANDPA[n]] >= height[b]
     /\ round[n] = height[b]
     /\ ~castVote[n]
     /\ vote(n, b)
     /\ UNCHANGED <<round,bestGRANDPA, bestBEEFY, sessionStart, 
-                    height, status, parent, epoch, pc>>
+                    height, status, parent, epoch>>
 
 (***************************************************************************)
 (* Logic for a faulty node.                                                *)
@@ -519,7 +500,7 @@ FaultyStep ==
         /\ b /= gen
         /\ votes' = [votes EXCEPT ![b] = votes[b] \cup {n}]
     /\ UNCHANGED <<round,bestGRANDPA, bestBEEFY, sessionStart, castVote, 
-                    height, status, parent, epoch, pc>>
+                    height, status, parent, epoch>>
 
 (***************************************************************************)
 (* Below are defined the next-state action and the complete spec.          *)
@@ -539,7 +520,7 @@ CorrectStep ==
 
 System == 
     \/ CorrectStep
-    \*\/ FaultyStep
+    \/ FaultyStep
     
 Next == Environment \/ System
 

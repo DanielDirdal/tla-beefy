@@ -1,4 +1,4 @@
-------------------------------- MODULE BEEFY -------------------------------
+------------------------------- MODULE BEEFYForks --------------------------
 EXTENDS Integers, FiniteSets, TLC, BEEFY_typedefs 
 
 (***************************************************************************)
@@ -430,6 +430,21 @@ CalculateRoundNumber(n) ==
         /\ r > round[n]
         /\ round' = [round EXCEPT ![n] = r]
         /\ castVote' = [castVote EXCEPT ![n] = FALSE]
+        /\ votes' = votes
+        \* Maintain or remove vote from last round based on whether the block 
+        \* in the last round was justified or not:
+        \* - If justified, keep the vote.
+        \* - If not justified, remove votes to disregard past vote.
+        \*   It must be Finalized.
+        (*
+        /\ \/ \E b \in Blocks : /\ height[b] = round[n]
+                                /\ Justified(b)
+                                /\ votes' = votes
+           \/ \E b \in Blocks : /\ height[b] = round[n]
+                                /\ Finalized(b)
+                                /\ ~Justified(b)
+                                /\ votes' = [votes EXCEPT ![b] = @ \ {n}]
+        *)
 
 (***************************************************************************)
 (* Update the round number for node n if:                                  *)
@@ -453,12 +468,11 @@ CalculateRoundNumber(n) ==
 (*  - Votes for an inactive round are not propagated.                      *)
 (***************************************************************************)
 UpdateRound(n) ==
-    \* This condition can make the algorithm stuck (Explanation above).
     /\ height[bestBEEFY[n]] >= round[n]
     /\ castVote[n]
     /\ CalculateRoundNumber(n)
-    /\ UNCHANGED <<bestGRANDPA, bestBEEFY, sessionStart, votes, 
-                    height, status, parent, epoch>>
+    /\ UNCHANGED <<bestGRANDPA, bestBEEFY, sessionStart, height, status, 
+                    parent, epoch>>
 
 (***************************************************************************)
 (* A honest node n can vote for a block b in round r if:                   *)
@@ -512,7 +526,7 @@ CorrectStep ==
 
 System == 
     \/ CorrectStep
-    \*\/ FaultyStep
+    \/ FaultyStep
     
 Next == Environment \/ System
 
@@ -618,10 +632,10 @@ HonestRoundImpliesMandatoryBlocksJustified ==
         => Justified(b)
 
 (***************************************************************************)
-(* No block can have a BEEFY Justification if there exists a mandatory     *)
-(* block at a lower or equal height that lacks a BEEFY Justification.      *)
+(* If a block has a BEEFY Justification b, then all mandatory blocks with  *)
+(* height less or equal to b must have a BEEFY Justification.              *)
 (***************************************************************************)
-AllPreviousMandatoryJustified == 
+AllPreviousMandatoryBlocksJustified == 
     \A b \in Blocks : Justified(b) => \A c \in Blocks :
         /\ IsMandatory(c)
         /\ height[c] <= height[b]
